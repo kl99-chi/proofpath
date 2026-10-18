@@ -2,9 +2,9 @@ import flet as ft
 
 from models.enums import TrustLevel
 from theme import (
-    COLOR_PRIMARY, COLOR_TEXT, COLOR_TEXT_MUTED, trust_badge, card,
+    COLOR_PRIMARY, COLOR_TEXT, COLOR_TEXT_MUTED, COLOR_SUCCESS, trust_badge, card,
     logout_button, primary_button, secondary_button, stat_strip, page_view,
-    app_bar, icon,
+    app_bar, icon, icon_text,
 )
 
 
@@ -27,6 +27,31 @@ def passport_page(page: ft.Page, ds) -> ft.View:
         1 for s in skills if s.trust_level == TrustLevel.BUSINESS_VERIFIED
     )
 
+    def proof_lines(skill):
+        """The proof behind a skill: which business verified it for which
+        task, and the person's own evidence entries."""
+        lines = []
+        for challenge_id in skill.verified_challenge_ids:
+            ch = ds.challenges.get(challenge_id)
+            if ch is None:
+                continue
+            business = ds.businesses.get(ch.business_id)
+            who = business.name if business else "a business"
+            lines.append(
+                icon_text("VERIFIED", f"Verified by {who}: {ch.title}", size=12,
+                          color=COLOR_SUCCESS, weight=ft.FontWeight.BOLD)
+            )
+        for evidence_id in skill.evidence_ids:
+            ev = ds.evidence.get(evidence_id)
+            if ev is None:
+                continue
+            kind = ev.evidence_type.value.replace("_", " ").capitalize()
+            lines.append(
+                icon_text("ATTACH_FILE", f"{kind}: {ev.description}", size=12,
+                          color=COLOR_TEXT_MUTED)
+            )
+        return lines
+
     skill_cards = []
     for skill in skills:
         if skill.trust_level == TrustLevel.BUSINESS_VERIFIED:
@@ -47,7 +72,7 @@ def passport_page(page: ft.Page, ds) -> ft.View:
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             ft.Text(detail, size=12, color=COLOR_TEXT_MUTED),
-        ]
+        ] + proof_lines(skill)
 
         if skill.trust_level != TrustLevel.BUSINESS_VERIFIED:
             async def add_evidence_click(e, sid=skill.id):
