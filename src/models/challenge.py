@@ -12,7 +12,7 @@ DEFAULT_TIME_LIMIT_HOURS = 24
 
 # 1.0 = real time. Lower it to test expiry quickly: 1/1440 turns
 # "24 hours" into 1 minute. PUT IT BACK TO 1.0 AFTERWARDS.
-TIME_SCALE = 1/1440
+TIME_SCALE = 1.0
 
 
 def _now() -> datetime:
