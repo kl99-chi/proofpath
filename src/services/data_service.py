@@ -2,7 +2,12 @@ import json
 import shutil
 from pathlib import Path
 
-from models.enums import TrustLevel, ChallengeStatus, SubmissionStatus
+from models.enums import TrustLevel, ChallengeStatus, SubmissionStatus, Role
+from models.account import Account
+from services.auth import (
+    hash_password, verify_password, normalise_email, is_valid_email,
+    MIN_PASSWORD_LENGTH,
+)
 from models.user import Youth, Business
 from models.skill import Skill
 from models.evidence import Evidence, EvidenceType
@@ -115,6 +120,31 @@ def _submission_from_dict(d: dict) -> Submission:
     )
 
 
+DEMO_PASSWORD = "demo1234"
+DEMO_ACCOUNTS = [
+    ("thabo@proofpath.demo", Role.YOUTH, "Y001"),
+    ("naledi@proofpath.demo", Role.YOUTH, "Y002"),
+    ("sipho@proofpath.demo", Role.YOUTH, "Y003"),
+    ("lerato@proofpath.demo", Role.BUSINESS, "B001"),
+    ("npo@proofpath.demo", Role.BUSINESS, "B002"),
+    ("barber@proofpath.demo", Role.BUSINESS, "B003"),
+]
+
+
+def _account_to_dict(a: Account) -> dict:
+    return {
+        "email": a.email, "password_hash": a.password_hash,
+        "role": a.role.value, "profile_id": a.profile_id,
+    }
+
+
+def _account_from_dict(d: dict) -> Account:
+    return Account(
+        email=d["email"], password_hash=d["password_hash"],
+        role=Role(d["role"]), profile_id=d["profile_id"],
+    )
+
+
 class DataService:
     def __init__(self):
         self.youths: dict[str, Youth] = {}
@@ -133,8 +163,14 @@ class DataService:
         # page, e.g. "you were withdrawn". Deliberately NOT saved to JSON.
         self.notices: list[tuple[str, str]] = []
 
+        self.accounts: dict[str, Account] = {}  # keyed by email
+        # Who is signed in right now. Deliberately NOT saved to JSON, so
+        # restarting the app signs everyone out.
+        self.current_account: Account | None = None
+
         self.load()
         self.seed_if_empty()
+        self.ensure_demo_accounts()
 
     def save(self):
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +181,7 @@ class DataService:
             "evidence": {k: _evidence_to_dict(v) for k, v in self.evidence.items()},
             "challenges": {k: _challenge_to_dict(v) for k, v in self.challenges.items()},
             "submissions": {k: _submission_to_dict(v) for k, v in self.submissions.items()},
+            "accounts": {k: _account_to_dict(v) for k, v in self.accounts.items()},
         }
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=2)
@@ -162,7 +199,8 @@ class DataService:
         self.evidence = {k: _evidence_from_dict(v) for k, v in data.get("evidence", {}).items()}
         self.challenges = {k: _challenge_from_dict(v) for k, v in data.get("challenges", {}).items()}
         self.submissions = {k: _submission_from_dict(v) for k, v in data.get("submissions", {}).items()}
-
+        self.accounts = {k: _account_from_dict(v) for k, v in data.get("accounts", {}).items()}
+    
     def store_attachment(self, source_path: str, submission_id: str) -> tuple[str, str]:
         """Copy a picked file into data/uploads/ so it survives even if the
         original is moved or deleted. Returns (display_name, stored_filename).
@@ -223,6 +261,108 @@ class DataService:
         mine = [msg for who, msg in self.notices if who == youth_id]
         self.notices = [(who, msg) for who, msg in self.notices if who != youth_id]
         return mine
+
+    # ---------- accounts ----------
+
+    @property
+    def current_profile_id(self) -> str | None:
+        """Id of the signed-in Youth/Business, or None."""
+        return self.current_account.profile_id if self.current_account else None
+
+    @property
+    def current_name(self) -> str:
+        pid = self.current_profile_id
+        if pid in self.youths:
+            return self.youths[pid].name
+        if pid in self.businesses:
+            return self.businesses[pid].name
+        return ""
+
+    def register(self, role: Role, name: str, email: str, password: str,
+                 extra: str = "") -> Account:
+        """Create a new youth or business plus its login, and sign them in.
+        Raises ValueError with a message that's safe to show the user."""
+        name = (name or "").strip()
+        email = normalise_email(email)
+        if not name:
+            raise ValueError("Please enter a name.")
+        if not is_valid_email(email):
+            raise ValueError("Please enter a valid email address.")
+        if email in self.accounts:
+            raise ValueError("An account with that email already exists. Try logging in.")
+        if len(password or "") < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+
+        if role == Role.YOUTH:
+            profile = Youth(id=f"Y{len(self.youths) + 1:03d}", name=name,
+                            headline=(extra or "").strip())
+            self.youths[profile.id] = profile
+        else:
+            profile = Business(id=f"B{len(self.businesses) + 1:03d}", name=name,
+                               location=(extra or "").strip())
+            self.businesses[profile.id] = profile
+
+        account = Account(
+            email=email, password_hash=hash_password(password),
+            role=role, profile_id=profile.id,
+        )
+        self.accounts[email] = account
+        self.current_account = account
+        self.save()
+        return account
+
+    def login(self, email: str, password: str) -> Account:
+        account = self.accounts.get(normalise_email(email))
+        # One message for "no such email" and "wrong password", so the form
+        # doesn't reveal which emails are registered.
+        if account is None or not verify_password(password or "", account.password_hash):
+            raise ValueError("Incorrect email or password.")
+        self.current_account = account
+        return account
+
+    def sign_in_as(self, profile_id: str) -> Account:
+        """Demo shortcut: sign in as a seeded profile without a password."""
+        for account in self.accounts.values():
+            if account.profile_id == profile_id:
+                self.current_account = account
+                return account
+        raise ValueError("That demo account isn't available.")
+
+    def logout(self) -> None:
+        self.current_account = None
+        self.selected_skill_id = None
+        self.selected_challenge_id = None
+
+    def ensure_demo_accounts(self) -> None:
+        """Give each seeded profile a login so the demo can be driven from
+        the login screen. Skips profiles that don't exist or already have one."""
+        created = False
+        for email, role, profile_id in DEMO_ACCOUNTS:
+            exists = profile_id in (self.youths if role == Role.YOUTH else self.businesses)
+            if email in self.accounts or not exists:
+                continue
+            self.accounts[email] = Account(
+                email=email, password_hash=hash_password(DEMO_PASSWORD),
+                role=role, profile_id=profile_id,
+            )
+            created = True
+        if created:
+            self.save()
+
+    # ---------- skills ----------
+
+    def add_skill(self, youth_id: str, skill_name: str) -> Skill:
+        """Add a self-declared skill to a youth's passport. Returns the
+        existing skill if they already have it."""
+        youth = self.youths[youth_id]
+        for sid in youth.skill_ids:
+            if self.skills[sid].name == skill_name:
+                return self.skills[sid]
+        skill = Skill(id=f"SK{len(self.skills) + 1:03d}", owner_id=youth_id, name=skill_name)
+        self.skills[skill.id] = skill
+        youth.skill_ids.append(skill.id)
+        self.save()
+        return skill
 
     def seed_if_empty(self):
         if self.youths or self.businesses:

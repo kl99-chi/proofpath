@@ -2,21 +2,24 @@ import flet as ft
 
 from models.enums import TrustLevel
 from theme import (
-    COLOR_PRIMARY, COLOR_TEXT, COLOR_TEXT_MUTED, trust_badge, card, back_button,
-    primary_button, stat_strip, page_view, app_bar, icon,
+    COLOR_PRIMARY, COLOR_TEXT, COLOR_TEXT_MUTED, trust_badge, card,
+    logout_button, primary_button, secondary_button, stat_strip, page_view,
+    app_bar, icon,
 )
-
-CURRENT_YOUTH_ID = "Y001"
 
 
 def passport_page(page: ft.Page, ds) -> ft.View:
-    async def go_home(e):
+    async def log_out(e):
+        ds.logout()
         await page.push_route("/")
 
     async def go_challenges(e):
         await page.push_route("/challenges")
 
-    youth = ds.youths[CURRENT_YOUTH_ID]
+    async def go_add_skill(e):
+        await page.push_route("/add-skill")
+
+    youth = ds.youths[ds.current_profile_id]
     skills = [ds.skills[sid] for sid in youth.skill_ids]
 
     total_evidence = sum(len(s.evidence_ids) for s in skills)
@@ -62,6 +65,16 @@ def passport_page(page: ft.Page, ds) -> ft.View:
 
         skill_cards.append(card(ft.Column(controls=card_controls)))
 
+    if not skill_cards:
+        skill_cards.append(
+            card(
+                ft.Text(
+                    "No skills yet. Add your first skill to start building proof.",
+                    color=COLOR_TEXT_MUTED,
+                )
+            )
+        )
+
     return page_view(
         "/passport",
         [
@@ -78,6 +91,7 @@ def passport_page(page: ft.Page, ds) -> ft.View:
             ft.Text("My skills", weight=ft.FontWeight.BOLD, color=COLOR_TEXT),
             ft.Column(controls=skill_cards),
             primary_button("Browse Micro-Challenges", go_challenges, "SEARCH"),
-            back_button(go_home),
+            secondary_button("Add a skill", go_add_skill, "ADD"),
+            logout_button(log_out),
         ],
     )

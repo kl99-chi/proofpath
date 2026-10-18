@@ -2,6 +2,13 @@ from dataclasses import dataclass, field
 
 from .enums import TrustLevel
 
+# One shared list, so a business posting a challenge and a youth adding a
+# skill always spell skills identically (matching is by name).
+SKILL_CATALOG = [
+    "Excel", "Python", "SQL", "Design", "Networking",
+    "Data Entry", "Social Media", "Bookkeeping", "Web Development", "Writing",
+]
+
 
 @dataclass
 class Skill:

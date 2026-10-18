@@ -6,17 +6,16 @@ from theme import (
     COLOR_TEXT_MUTED, COLOR_ERROR,
     back_button, primary_button, page_view, app_bar,
 )
+from models.skill import SKILL_CATALOG
 
-# Hardcoded for the MVP.
-CURRENT_BUSINESS_ID = "B001"
-
-SKILL_OPTIONS = ["Excel", "Python", "SQL", "Design", "Networking"]
+SKILL_OPTIONS = SKILL_CATALOG
 
 # What the business sees -> hours a youth has to submit after accepting.
 TIME_LIMITS = {"24 hours": 24, "3 days": 72, "7 days": 168, "14 days": 336}
 
 
 def post_challenge_page(page: ft.Page, ds) -> ft.View:
+    CURRENT_BUSINESS_ID = ds.current_profile_id
     async def go_business(e):
         await page.push_route("/business")
 

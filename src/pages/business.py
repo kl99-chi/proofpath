@@ -3,16 +3,16 @@ import flet as ft
 from models.enums import SubmissionStatus
 from theme import (
     COLOR_TEXT, COLOR_TEXT_MUTED, challenge_badge, accepted_counter, card,
-    back_button, primary_button, secondary_button, stat_strip, page_view,
+    logout_button, primary_button, secondary_button, stat_strip, page_view,
     app_bar, icon_text,
 )
 
-# Hardcoded for the MVP: always viewing Lerato's Kitchen.
-CURRENT_BUSINESS_ID = "B001"
-
 
 def business_page(page: ft.Page, ds) -> ft.View:
-    async def go_home(e):
+    CURRENT_BUSINESS_ID = ds.current_profile_id  # whoever is logged in
+
+    async def log_out(e):
+        ds.logout()
         await page.push_route("/")
 
     async def go_post_challenge(e):
@@ -80,6 +80,6 @@ def business_page(page: ft.Page, ds) -> ft.View:
             ft.Column(controls=challenge_cards),
             primary_button("Post a Challenge", go_post_challenge, "ADD"),
             secondary_button("Review & Verify", go_review, "RATE_REVIEW"),
-            back_button(go_home),
+            logout_button(log_out),
         ],
     )

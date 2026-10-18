@@ -1,14 +1,21 @@
 import flet as ft
 
-from pages.welcome import welcome_page
-from pages.passport import passport_page
+from models.enums import Role
+from pages.add_evidence import add_evidence_page
+from pages.add_skill import add_skill_page
+from pages.auth import access_denied_page, login_page, signup_page
 from pages.business import business_page
 from pages.challenges import challenges_page
-from pages.review_verify import review_verify_page
-from pages.add_evidence import add_evidence_page
+from pages.passport import passport_page
 from pages.post_challenge import post_challenge_page
-from theme import page_view, back_button, icon_text
+from pages.review_verify import review_verify_page
+from pages.welcome import welcome_page
 from services.data_service import DataService
+from theme import page_view, back_button, icon_text
+
+PUBLIC_ROUTES = {"/", "/login", "/signup-youth", "/signup-business"}
+YOUTH_ROUTES = {"/passport", "/challenges", "/add-evidence", "/add-skill"}
+BUSINESS_ROUTES = {"/business", "/post-challenge", "/review"}
 
 
 def main(page: ft.Page):
@@ -16,34 +23,60 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
 
     data_service = DataService()
+
+    # In Flet 1.0 the file picker is a "service": register it once, up front,
+    # and share it with the pages that need it.
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
 
     async def go_home(e):
         await page.push_route("/")
 
+    def is_allowed(route: str) -> bool:
+        """Route guard: public pages for everyone, youth pages for youth
+        accounts, business pages for business accounts."""
+        if route in PUBLIC_ROUTES:
+            return True
+        account = data_service.current_account
+        if route in YOUTH_ROUTES:
+            return account is not None and account.role == Role.YOUTH
+        if route in BUSINESS_ROUTES:
+            return account is not None and account.role == Role.BUSINESS
+        return True  # unknown routes fall through to the 404 page
+
     def route_change():
         data_service.release_expired()
         page.views.clear()
+        route = page.route
 
-        if page.route == "/":
+        if not is_allowed(route):
+            page.views.append(access_denied_page(page, data_service))
+        elif route == "/":
             page.views.append(welcome_page(page, data_service))
-        elif page.route == "/passport":
+        elif route == "/login":
+            page.views.append(login_page(page, data_service))
+        elif route == "/signup-youth":
+            page.views.append(signup_page(page, data_service, Role.YOUTH))
+        elif route == "/signup-business":
+            page.views.append(signup_page(page, data_service, Role.BUSINESS))
+        elif route == "/passport":
             page.views.append(passport_page(page, data_service))
-        elif page.route == "/business":
-            page.views.append(business_page(page, data_service))
-        elif page.route == "/challenges":
+        elif route == "/add-skill":
+            page.views.append(add_skill_page(page, data_service))
+        elif route == "/challenges":
             page.views.append(challenges_page(page, data_service, file_picker))
-        elif page.route == "/review":
-            page.views.append(review_verify_page(page, data_service))
-        elif page.route == "/add-evidence":
-            page.views.append(add_evidence_page(page, data_service))    
-        elif page.route == "/post-challenge":
+        elif route == "/add-evidence":
+            page.views.append(add_evidence_page(page, data_service))
+        elif route == "/business":
+            page.views.append(business_page(page, data_service))
+        elif route == "/post-challenge":
             page.views.append(post_challenge_page(page, data_service))
+        elif route == "/review":
+            page.views.append(review_verify_page(page, data_service))
         else:
             page.views.append(
                 page_view(
-                    page.route,
+                    route,
                     [
                         icon_text("ERROR_OUTLINE", "Page not found", size=20,
                                   weight=ft.FontWeight.BOLD, center=True),

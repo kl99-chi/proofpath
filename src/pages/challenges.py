@@ -8,10 +8,10 @@ from theme import (
     back_button, page_view, app_bar, icon_text, format_remaining, format_hours,
 )
 
-CURRENT_YOUTH_ID = "Y001"
-
 
 def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
+    me = ds.current_profile_id  # whoever is logged in
+
     async def go_passport(e):
         await page.push_route("/passport")
 
@@ -53,19 +53,26 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
     def create_submission(challenge_id, note_field, picked, attempt_number=1):
         """Build, store and record a new Submission. Returns an error
         message, or None on success."""
-        note = (note_field.value or "").strip()
         challenge = ds.challenges[challenge_id]
         if challenge.is_solved:
             return "This challenge was just solved, so it's closed to new submissions."
-        if CURRENT_YOUTH_ID not in challenge.participants:
+        if me not in challenge.participants:
             return "You're no longer on this challenge."
         if attempt_number == 1:  # revisions after feedback aren't time-limited
-            left = challenge.time_left(CURRENT_YOUTH_ID)
+            left = challenge.time_left(me)
             if left is not None and left.total_seconds() <= 0:
                 return (
                     "Your time limit has passed, so a first submission can't "
                     "be accepted. Go back and reopen the page."
                 )
+
+        note = (note_field.value or "").strip()
+        if not note and not picked["path"]:
+            return (
+                "Add a note or attach a file before submitting."
+                if file_picker
+                else "Add a note before submitting."
+            )
 
         new_id = f"SUB{len(ds.submissions) + 1:03d}"
         attachment_name, attachment_file = "", ""
@@ -80,7 +87,7 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
         submission = Submission(
             id=new_id,
             challenge_id=challenge_id,
-            youth_id=CURRENT_YOUTH_ID,
+            youth_id=me,
             note=note,
             attempt_number=attempt_number,
             attachment_name=attachment_name,
@@ -92,7 +99,7 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
     def countdown_line(ch):
         """How long this youth has left to submit, or None if their accept
         pre-dates time limits."""
-        left = ch.time_left(CURRENT_YOUTH_ID)
+        left = ch.time_left(me)
         if left is None:
             return None
         if left.total_seconds() <= 0:
@@ -107,11 +114,13 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
             weight=ft.FontWeight.BOLD if urgent else None,
         )
 
+    my_skill_names = {ds.skills[sid].name for sid in ds.youths[me].skill_ids}
+
     def build_card(ch):
         business = ds.businesses[ch.business_id]
-        mine = ds.submissions_for(ch.id, CURRENT_YOUTH_ID)
+        mine = ds.submissions_for(ch.id, me)
         latest = mine[-1] if mine else None
-        accepted_by_me = CURRENT_YOUTH_ID in ch.participants
+        accepted_by_me = me in ch.participants
 
         header = ft.Text(ch.title, weight=ft.FontWeight.BOLD, size=16, color=COLOR_TEXT)
         meta = ft.Text(
@@ -151,9 +160,13 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
                 )
                 return card(ft.Column(controls=top))
 
-            async def accept(e, challenge_id=ch.id):
+            async def accept(e, challenge_id=ch.id, skill=ch.skill_name):
                 try:
-                    ds.challenges[challenge_id].accept(CURRENT_YOUTH_ID)
+                    ds.challenges[challenge_id].accept(me)
+                    # Accepting puts the challenge's skill on your passport as
+                    # self-declared (if it isn't there yet), so the business
+                    # has something to verify afterwards.
+                    ds.add_skill(me, skill)
                     ds.save()
                 except ValueError:
                     # Someone took the last spot, or it was just solved.
@@ -161,19 +174,27 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
                     pass
                 refresh()
 
-            limit_line = icon_text(
-                "TIMER", f"Time limit: {format_hours(ch.time_limit_hours)} after accepting",
-                size=12, color=COLOR_TEXT_MUTED,
-            )
-            rule_line = icon_text(
-                "INFO_OUTLINE", "The first verified solution closes this challenge.",
-                size=12, color=COLOR_TEXT_MUTED,
-            )
-
+            extra_lines = [
+                icon_text(
+                    "TIMER", f"Time limit: {format_hours(ch.time_limit_hours)} after accepting",
+                    size=12, color=COLOR_TEXT_MUTED,
+                ),
+                icon_text(
+                    "INFO_OUTLINE", "The first verified solution closes this challenge.",
+                    size=12, color=COLOR_TEXT_MUTED,
+                ),
+            ]
+            if ch.skill_name not in my_skill_names:
+                extra_lines.append(
+                    icon_text(
+                        "ADD_CIRCLE_OUTLINE",
+                        f"Accepting adds {ch.skill_name} to your passport as self-declared.",
+                        size=12, color=COLOR_TEXT_MUTED,
+                    )
+                )
             return card(
                 ft.Column(
-                    controls=top + [
-                        limit_line,
+                    controls=top + extra_lines + [
                         primary_button("Accept challenge", accept, "CHECK_CIRCLE_OUTLINE"),
                     ]
                 )
@@ -204,7 +225,7 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
                     page.update()
                     return
                 try:
-                    ds.withdraw_participant(challenge_id, CURRENT_YOUTH_ID)
+                    ds.withdraw_participant(challenge_id, me)
                 except ValueError:
                     pass  # e.g. already submitted; the refresh shows the truth
                 refresh()
@@ -272,7 +293,7 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
 
     def closed_to_me(c):
         """Full, and I'm not one of the participants: I can't join it."""
-        return c.is_full and CURRENT_YOUTH_ID not in c.participants
+        return c.is_full and me not in c.participants
 
     # Available first, then full, then solved.
     ordered = sorted(
@@ -291,7 +312,7 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
             padding=12,
             border_radius=10,
         )
-        for message in ds.pop_notices(CURRENT_YOUTH_ID)
+        for message in ds.pop_notices(me)
     ]
 
     return page_view(

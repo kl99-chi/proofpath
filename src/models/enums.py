@@ -19,3 +19,8 @@ class SubmissionStatus(Enum):
     SUBMITTED = "submitted"
     CHANGES_REQUESTED = "changes_requested"
     VERIFIED = "verified"
+
+
+class Role(Enum):
+    YOUTH = "youth"
+    BUSINESS = "business"

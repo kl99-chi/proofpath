@@ -11,9 +11,6 @@ from theme import (
     secondary_button, page_view, app_bar, icon, accepted_counter,
 )
 
-CURRENT_BUSINESS_ID = "B001"
-
-
 def open_file(path) -> None:
     """Open a file with the computer's default app."""
     if hasattr(os, "startfile"):  # Windows
@@ -25,6 +22,8 @@ def open_file(path) -> None:
 
 
 def review_verify_page(page: ft.Page, ds) -> ft.View:
+    CURRENT_BUSINESS_ID = ds.current_profile_id
+
     async def go_business(e):
         await page.push_route("/business")
 

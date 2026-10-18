@@ -288,3 +288,11 @@ def format_hours(hours: int) -> str:
     if hours >= 48 and hours % 24 == 0:
         return f"{hours // 24} days"
     return f"{hours} hours"
+
+def logout_button(on_click) -> ft.TextButton:
+    return ft.TextButton(
+        "Log out",
+        on_click=on_click,
+        icon=icon("LOGOUT"),
+        style=ft.ButtonStyle(color=COLOR_TEXT),
+    )
