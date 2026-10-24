@@ -1,5 +1,8 @@
 import flet as ft
-
+import asyncio
+import uuid
+from pathlib import Path
+from paths import INCOMING_DIR
 from models.enums import SubmissionStatus
 from models.submission import Submission
 from theme import (
@@ -33,12 +36,45 @@ def challenges_page(page: ft.Page, ds, file_picker=None) -> ft.View:
             if not files:
                 return  # dialog was cancelled
             chosen = files[0]
-            if not chosen.path:
-                label.value = "Couldn't read that file's location (desktop app only)."
+
+            if chosen.size > 10 * 1024 * 1024:
+                label.value = "That file is over 10 MB. Pick a smaller one."
                 label.color = COLOR_ERROR
                 page.update()
                 return
-            picked["path"] = chosen.path
+
+            if chosen.path:
+                # Desktop app: we can read the file straight from disk.
+                picked["path"] = chosen.path
+            else:
+                # Browser: upload to the server first, then use that copy.
+                label.value = f"Uploading {chosen.name}..."
+                label.color = COLOR_TEXT_MUTED
+                page.update()
+                try:
+                    INCOMING_DIR.mkdir(parents=True, exist_ok=True)
+                    server_name = f"{uuid.uuid4().hex[:8]}_{Path(chosen.name).name}"
+                    url = page.get_upload_url(server_name, 60)
+                    await file_picker.upload([
+                        ft.FilePickerUploadFile(
+                            name=chosen.name, id=chosen.id,
+                            upload_url=url, method="PUT",
+                        )
+                    ])
+                    target = INCOMING_DIR / server_name
+                    for _ in range(150):  # wait up to about 30 seconds
+                        if target.exists() and target.stat().st_size >= chosen.size:
+                            break
+                        await asyncio.sleep(0.2)
+                    else:
+                        raise TimeoutError("upload did not finish")
+                except Exception as ex:
+                    label.value = f"Couldn't upload that file ({ex}). Try again."
+                    label.color = COLOR_ERROR
+                    page.update()
+                    return
+                picked["path"] = str(target)
+
             picked["name"] = chosen.name
             label.value = f"Attached: {chosen.name}"
             label.color = COLOR_SUCCESS

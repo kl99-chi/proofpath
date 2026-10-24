@@ -1,4 +1,7 @@
+import os
+import secrets
 import flet as ft
+from paths import INCOMING_DIR
 
 from models.enums import Role
 from pages.add_evidence import add_evidence_page
@@ -99,4 +102,17 @@ def main(page: ft.Page):
     route_change()
 
 
-ft.run(main)
+if __name__ == "__main__":
+    if os.getenv("PROOFPATH_WEB") == "1":
+        # Flet refuses to create upload URLs without a signing key.
+        os.environ.setdefault("FLET_SECRET_KEY", secrets.token_hex(32))
+        INCOMING_DIR.mkdir(parents=True, exist_ok=True)
+        ft.run(
+            main,
+            view=ft.AppView.WEB_BROWSER,
+            host="0.0.0.0",
+            port=int(os.getenv("PORT", "8000")),
+            upload_dir=str(INCOMING_DIR),
+        )
+    else:
+        ft.run(main)
