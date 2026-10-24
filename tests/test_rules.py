@@ -22,6 +22,7 @@ from models.enums import ChallengeStatus, Role, SubmissionStatus, TrustLevel  # 
 from models.skill import Skill  # noqa: E402
 from models.submission import Submission  # noqa: E402
 from services.auth import hash_password, verify_password  # noqa: E402
+#from services.data_service import DataService
 
 
 # ---------- helpers ----------
@@ -407,7 +408,8 @@ def test_store_attachment_keeps_its_own_copy(tmp_path):
     source = tmp_path / "work.txt"
     source.write_text("my work")
     name, stored = ds.store_attachment(str(source), "SUB099")
-    assert (name, stored) == ("work.txt", "SUB099_work.txt")
+    assert name == "work.txt"
+    assert stored == f"{ds.session_id}_SUB099_work.txt"
 
     sub = Submission(id="SUB099", challenge_id="CH001", youth_id="Y001", note="",
                      attachment_name=name, attachment_file=stored)
@@ -415,6 +417,17 @@ def test_store_attachment_keeps_its_own_copy(tmp_path):
     assert ds.attachment_path(sub).read_text() == "my work"
     source.unlink()  # the original can vanish; our copy survives
     assert ds.attachment_path(sub).exists()
+
+
+# ---------- visitor ----------
+def test_web_mode_visitors_do_not_share_data(tmp_path):
+    fresh_service(tmp_path)  # points the data folder at tmp_path, so the real data is never touched
+    a = dsmod.DataService(persist=False)
+    b = dsmod.DataService(persist=False)
+    a.challenges["CH001"].accept("Y001")
+    assert "Y001" in a.challenges["CH001"].participants
+    assert "Y001" not in b.challenges["CH001"].participants
+    assert a.session_id != b.session_id
 
 
 # ---------- runner ----------

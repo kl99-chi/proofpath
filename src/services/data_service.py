@@ -1,6 +1,7 @@
 import json
 import shutil
 from pathlib import Path
+import uuid
 
 from models.enums import TrustLevel, ChallengeStatus, SubmissionStatus, Role
 from models.account import Account
@@ -146,13 +147,16 @@ def _account_from_dict(d: dict) -> Account:
 
 
 class DataService:
-    def __init__(self):
+    def __init__(self, persist: bool = True):
         self.youths: dict[str, Youth] = {}
         self.businesses: dict[str, Business] = {}
         self.skills: dict[str, Skill] = {}
         self.evidence: dict[str, Evidence] = {}
         self.challenges: dict[str, MicroChallenge] = {}
         self.submissions: dict[str, Submission] = {}
+        self.persist = persist
+        # Short id that keeps one visitor's uploaded files from overwriting another's.
+        self.session_id = uuid.uuid4().hex[:6]
 
         # Transient — which record the user just selected, for routing
         # between pages. Deliberately NOT saved to JSON.
@@ -168,11 +172,15 @@ class DataService:
         # restarting the app signs everyone out.
         self.current_account: Account | None = None
 
-        self.load()
+        if persist:
+            self.load()
         self.seed_if_empty()
         self.ensure_demo_accounts()
 
     def save(self):
+        if not self.persist:
+            return
+        
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "youths": {k: _youth_to_dict(v) for k, v in self.youths.items()},
@@ -207,7 +215,7 @@ class DataService:
         Raises OSError if the copy fails."""
         source = Path(source_path)
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        stored_name = f"{submission_id}_{source.name}"
+        stored_name = f"{self.session_id}_{submission_id}_{source.name}"
         shutil.copy2(source, UPLOAD_DIR / stored_name)
         return source.name, stored_name
 

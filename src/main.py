@@ -25,7 +25,7 @@ def main(page: ft.Page):
     page.title = "ProofPath"
     page.theme_mode = ft.ThemeMode.LIGHT
 
-    data_service = DataService()
+    data_service = DataService(persist=os.getenv("PROOFPATH_WEB") != "1")
 
     # In Flet 1.0 the file picker is a "service": register it once, up front,
     # and share it with the pages that need it.
